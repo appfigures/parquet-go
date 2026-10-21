@@ -230,9 +230,7 @@ func (t *timestampType) AssignValue(dst reflect.Value, src Value) error {
 			unit = ts.Unit
 		}
 
-		nanos := src.int64() * int64(timeUnitDuration(unit))
-
-		val := time.Unix(0, nanos).UTC()
+		val := timeOfUnixValue(src.int64(), unit).UTC()
 		dst.Set(reflect.ValueOf(val))
 		return nil
 	case reflect.TypeOf((*time.Time)(nil)):
@@ -249,9 +247,7 @@ func (t *timestampType) AssignValue(dst reflect.Value, src Value) error {
 			unit = ts.Unit
 		}
 
-		nanos := src.int64() * int64(timeUnitDuration(unit))
-
-		val := time.Unix(0, nanos).UTC()
+		val := timeOfUnixValue(src.int64(), unit).UTC()
 		ptr := &val
 		dst.Set(reflect.ValueOf(ptr))
 		return nil
