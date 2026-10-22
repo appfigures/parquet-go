@@ -927,6 +927,7 @@ func writeRowsFuncOfTime(_ reflect.Type, schema *Schema, path columnPath, tagRep
 	if ts, ok := logicalTypeOf[*format.TimestampType](lt); ok {
 		unit = ts.Unit
 	}
+	isDate := logicalTypeIs[*format.DateType](lt)
 
 	// Check if the column is optional
 	isOptional := col.Node.Optional()
@@ -954,18 +955,25 @@ func writeRowsFuncOfTime(_ reflect.Type, schema *Schema, path columnPath, tagRep
 		defer wideIntBufPool.Put(buf)
 
 		times := rows.TimeArray()
-		switch unit.Value.(type) {
-		case *format.MilliSeconds:
+		if isDate {
+			// writeRows narrows these to the column's int32.
 			for i := range n {
-				buf.values[i] = times.Index(i).UnixMilli()
+				buf.values[i] = int64(daysSinceUnixEpoch(times.Index(i)))
 			}
-		case *format.MicroSeconds:
-			for i := range n {
-				buf.values[i] = times.Index(i).UnixMicro()
-			}
-		default:
-			for i := range n {
-				buf.values[i] = times.Index(i).UnixNano()
+		} else {
+			switch unit.Value.(type) {
+			case *format.MilliSeconds:
+				for i := range n {
+					buf.values[i] = times.Index(i).UnixMilli()
+				}
+			case *format.MicroSeconds:
+				for i := range n {
+					buf.values[i] = times.Index(i).UnixMicro()
+				}
+			default:
+				for i := range n {
+					buf.values[i] = times.Index(i).UnixNano()
+				}
 			}
 		}
 

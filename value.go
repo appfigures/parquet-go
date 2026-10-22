@@ -268,22 +268,16 @@ func makeValue(k Kind, lt *format.LogicalType, v reflect.Value) Value {
 
 	switch v.Type() {
 	case reflect.TypeOf(time.Time{}):
+		t := v.Interface().(time.Time)
+		// DATE is an INT32 day count. Writing nanoseconds into it corrupts the value.
+		if logicalTypeIs[*format.DateType](lt) {
+			return makeValueInt32(int32(daysSinceUnixEpoch(t)))
+		}
 		unit := Nanosecond.TimeUnit()
 		if ts, ok := logicalTypeOf[*format.TimestampType](lt); ok {
 			unit = ts.Unit
 		}
-
-		t := v.Interface().(time.Time)
-		var val int64
-		switch unit.Value.(type) {
-		case *format.MilliSeconds:
-			val = t.UnixMilli()
-		case *format.MicroSeconds:
-			val = t.UnixMicro()
-		default:
-			val = t.UnixNano()
-		}
-		return makeValueInt64(val)
+		return makeValueInt64(unixTimeIn(t, unit))
 	}
 
 	switch k {

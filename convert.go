@@ -1597,10 +1597,11 @@ func convertStringToTimeMicros(v Value, tz *time.Location) (Value, error) {
 	return v.convertToInt64(microseconds), nil
 }
 
+// convertDateToTimestamp returns UTC midnight. A DATE has no zone, and
+// convertTimestampToDate counts days in UTC, so tz is ignored as it was before.
 func convertDateToTimestamp(v Value, u format.TimeUnit, tz *time.Location) (Value, error) {
 	t := unixEpoch.AddDate(0, 0, int(v.int32()))
-	d := timeUnitDuration(u)
-	return v.convertToInt64(int64(t.In(tz).Sub(unixEpoch) / d)), nil
+	return v.convertToInt64(unixTimeIn(t, u)), nil
 }
 
 func convertDateToString(v Value) (Value, error) {
@@ -1644,14 +1645,29 @@ func convertTimestampToTimeMicros(v Value, u format.TimeUnit, sourceZone, target
 func convertTimestampToTimestamp(v Value, sourceUnit, targetUnit format.TimeUnit) (Value, error) {
 	sourceScale := timeUnitDuration(sourceUnit).Nanoseconds()
 	targetScale := timeUnitDuration(targetUnit).Nanoseconds()
-	targetValue := (v.int64() * sourceScale) / targetScale
+	// Scale by the ratio of the units rather than through nanoseconds, which
+	// would overflow for values outside 1677-2262.
+	var targetValue int64
+	if sourceScale >= targetScale {
+		targetValue = v.int64() * (sourceScale / targetScale)
+	} else {
+		targetValue = floorDiv(v.int64(), targetScale/sourceScale)
+	}
 	return v.convertToInt64(targetValue), nil
 }
 
 const nanosecondsPerDay = 24 * 60 * 60 * 1e9
 
 func daysSinceUnixEpoch(t time.Time) int {
-	return int(t.Sub(unixEpoch).Hours()) / 24
+	return int(floorDiv(t.Unix(), 24*60*60))
+}
+
+func floorDiv(a, b int64) int64 {
+	q := a / b
+	if (a%b != 0) && ((a < 0) != (b < 0)) {
+		q--
+	}
+	return q
 }
 
 func nearestMidnightLessThan(t time.Time) time.Time {
@@ -1660,7 +1676,32 @@ func nearestMidnightLessThan(t time.Time) time.Time {
 }
 
 func timestamp(v Value, u format.TimeUnit, tz *time.Location) time.Time {
-	return unixEpoch.In(tz).Add(time.Duration(v.int64()) * timeUnitDuration(u))
+	return timeOfUnixValue(v.int64(), u).In(tz)
+}
+
+// timeOfUnixValue converts a count of units since the Unix epoch to a time.
+// It avoids going through nanoseconds, which only cover 1677-2262 in an int64.
+func timeOfUnixValue(v int64, u format.TimeUnit) time.Time {
+	switch u.Value.(type) {
+	case *format.MilliSeconds:
+		return time.UnixMilli(v)
+	case *format.MicroSeconds:
+		return time.UnixMicro(v)
+	default:
+		return time.Unix(0, v)
+	}
+}
+
+// unixTimeIn is the inverse of timeOfUnixValue.
+func unixTimeIn(t time.Time, u format.TimeUnit) int64 {
+	switch u.Value.(type) {
+	case *format.MilliSeconds:
+		return t.UnixMilli()
+	case *format.MicroSeconds:
+		return t.UnixMicro()
+	default:
+		return t.UnixNano()
+	}
 }
 
 // timeUnitDuration returns the precision of unit, defaulting to nanoseconds
